@@ -83,7 +83,7 @@ ipcMain.handle('payment:create', (_, data) => paymentService.create(data))
 ipcMain.handle('payment:update', (_, id, data) => paymentService.update(id, data))
 ipcMain.handle('payment:delete', (_, id) => paymentService.delete(id))
 ipcMain.handle('payment:getByContract', (_, contractId) => paymentService.getByContract(contractId))
-ipcMain.handle('payment:markPaid', (_, id, paidDate, invoiceNo) => paymentService.markPaid(id, paidDate, invoiceNo))
+ipcMain.handle('payment:markPaid', (_, id, paidDate, invoiceNo, invoiceReceived) => paymentService.markPaid(id, paidDate, invoiceNo, invoiceReceived))
 
 ipcMain.handle('reminder:list', (_, params) => reminderService.list(params))
 ipcMain.handle('reminder:get', (_, id) => reminderService.get(id))

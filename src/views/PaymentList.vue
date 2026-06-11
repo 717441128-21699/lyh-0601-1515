@@ -141,6 +141,12 @@ watch(() => form.percentage, (newVal) => {
 function handleSearch() {
   pagination.page = 1
   loadList()
+  if (searchForm.contractId.length === 1) {
+    handleContractChange(searchForm.contractId[0])
+  } else {
+    selectedContract.value = null
+    contractPayments.value = []
+  }
 }
 
 function handleReset() {
@@ -278,7 +284,8 @@ async function handleMarkPaidSubmit() {
         const success = await window.api.payment.markPaid(
           deleteId.value,
           paidForm.paid_date,
-          paidForm.invoice_no
+          paidForm.invoice_no,
+          paidForm.invoice_received
         )
         if (success) {
           ElMessage.success('标记付款成功')

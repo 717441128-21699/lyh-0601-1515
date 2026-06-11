@@ -266,8 +266,8 @@ class BaseService<T> {
           whereClauses.push(`status IN (${placeholders})`)
           values.push(...value)
         } else if (key === 'expireMonth') {
-          whereClauses.push(`strftime('%m', end_date) = ?`)
-          values.push(String(value).padStart(2, '0'))
+          whereClauses.push(`strftime('%Y-%m', end_date) = ?`)
+          values.push(String(value))
         } else if (key === 'assetCategory' && Array.isArray(value)) {
           const placeholders = value.map(() => '?').join(',')
           whereClauses.push(`asset_category IN (${placeholders})`)
@@ -378,6 +378,91 @@ class ContractService extends BaseService<Contract> {
       total_amount: row[5] as number
     }
   }
+
+  update(id: number, data: Partial<Contract>): boolean {
+    const oldData = this.get(id)
+    if (!oldData) return false
+
+    const entries = Object.entries(data).filter(([k]) => k !== 'id')
+    if (entries.length === 0) return false
+
+    const setClauses = entries.map(([k]) => `${k} = ?`).join(',')
+    const values = [...entries.map(([, v]) => v), id]
+    const sql = `UPDATE ${this.tableName} SET ${setClauses}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+    getDb().run(sql, values)
+    const modified = getDb().getRowsModified() > 0
+
+    if (modified) {
+      const fieldLabels: Record<string, string> = {
+        contract_no: '合同编号',
+        contract_name: '合同名称',
+        contract_type: '合同类型',
+        supplier: '供应商',
+        asset_category: '资产类别',
+        start_date: '开始日期',
+        end_date: '结束日期',
+        total_amount: '合同金额',
+        currency: '币种',
+        status: '合同状态',
+        manager: '负责人',
+        department: '所属部门',
+        warranty_period: '质保期限',
+        auto_renewal: '自动续约',
+        renewal_notice_days: '续约提醒天数',
+        description: '备注'
+      }
+
+      const trackedFields = ['contract_no', 'supplier', 'manager', 'start_date', 'end_date', 'total_amount', 'status', 'contract_name', 'contract_type', 'asset_category']
+      const changeDetails: string[] = []
+
+      trackedFields.forEach(field => {
+        if (data[field as keyof Contract] !== undefined && data[field as keyof Contract] !== oldData[field as keyof Contract]) {
+          const oldVal = String(oldData[field as keyof Contract] ?? '')
+          const newVal = String(data[field as keyof Contract] ?? '')
+          const label = fieldLabels[field] || field
+
+          let displayOld = oldVal
+          let displayNew = newVal
+
+          if (field === 'status') {
+            const statusMap: Record<string, string> = { active: '执行中', pending: '待执行', completed: '已完成', terminated: '已终止' }
+            displayOld = statusMap[oldVal] || oldVal
+            displayNew = statusMap[newVal] || newVal
+          } else if (field === 'contract_type') {
+            const typeMap: Record<string, string> = { purchase: '采购', lease: '租赁', maintenance: '维保' }
+            displayOld = typeMap[oldVal] || oldVal
+            displayNew = typeMap[newVal] || newVal
+          } else if (field === 'total_amount') {
+            displayOld = `¥${Number(oldVal).toLocaleString()}`
+            displayNew = `¥${Number(newVal).toLocaleString()}`
+          } else if (field === 'auto_renewal') {
+            displayOld = oldVal === '1' ? '是' : '否'
+            displayNew = newVal === '1' ? '是' : '否'
+          }
+
+          changeDetails.push(`${label}：${displayOld} → ${displayNew}`)
+
+          getDb().run(
+            `INSERT INTO change_logs (contract_id, change_type, field_name, old_value, new_value, description, operator)
+             VALUES (?, 'update', ?, ?, ?, ?, ?)`,
+            [id, field, oldVal, newVal, `${label}变更：${displayOld} → ${displayNew}`, '系统']
+          )
+        }
+      })
+
+      if (changeDetails.length > 0) {
+        getDb().run(
+          `INSERT INTO change_logs (contract_id, change_type, field_name, old_value, new_value, description, operator)
+           VALUES (?, 'update', NULL, NULL, NULL, ?, ?)`,
+          [id, `合同信息变更：${changeDetails.join('；')}`, '系统']
+        )
+      }
+
+      saveDatabase()
+    }
+
+    return modified
+  }
 }
 
 interface Asset {
@@ -409,10 +494,15 @@ class AssetService extends BaseService<Asset> {
   }
 
   bindToContract(contractId: number, assetIds: number[]) {
-    getDb().run(`UPDATE assets SET contract_id = NULL WHERE contract_id = ?`, [contractId])
-    assetIds.forEach(id => {
-      getDb().run(`UPDATE assets SET contract_id = ? WHERE id = ?`, [contractId, id])
-    })
+    if (contractId === 0 || contractId === null) {
+      assetIds.forEach(id => {
+        getDb().run(`UPDATE assets SET contract_id = NULL WHERE id = ?`, [id])
+      })
+    } else {
+      assetIds.forEach(id => {
+        getDb().run(`UPDATE assets SET contract_id = ? WHERE id = ?`, [contractId, id])
+      })
+    }
     saveDatabase()
     return true
   }
@@ -445,14 +535,56 @@ class PaymentService extends BaseService<PaymentPlan> {
     super('payment_plans')
   }
 
+  list(params: any = {}) {
+    const { page = 1, pageSize = 20, ...filters } = params
+    const whereClauses: string[] = []
+    const values: any[] = []
+
+    if (filters.contractId && Array.isArray(filters.contractId) && filters.contractId.length > 0) {
+      const placeholders = filters.contractId.map(() => '?').join(',')
+      whereClauses.push(`contract_id IN (${placeholders})`)
+      values.push(...filters.contractId)
+    } else if (filters.contract_id !== undefined && filters.contract_id !== null && filters.contract_id !== '') {
+      whereClauses.push(`contract_id = ?`)
+      values.push(filters.contract_id)
+    }
+
+    if (filters.status && Array.isArray(filters.status) && filters.status.length > 0) {
+      const placeholders = filters.status.map(() => '?').join(',')
+      whereClauses.push(`status IN (${placeholders})`)
+      values.push(...filters.status)
+    }
+
+    if (filters.dueDateStart) {
+      whereClauses.push(`due_date >= ?`)
+      values.push(filters.dueDateStart)
+    }
+    if (filters.dueDateEnd) {
+      whereClauses.push(`due_date <= ?`)
+      values.push(filters.dueDateEnd)
+    }
+
+    const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : ''
+    const countSql = `SELECT COUNT(*) as total FROM ${this.tableName} ${whereSql}`
+    const dataSql = `SELECT * FROM ${this.tableName} ${whereSql} ORDER BY due_date ASC LIMIT ? OFFSET ?`
+
+    const countResult = getDb().exec(countSql, values)
+    const total = countResult[0]?.values[0]?.[0] as number || 0
+
+    const dataResult = getDb().exec(dataSql, [...values, pageSize, (page - 1) * pageSize])
+    const list = dataResult.length > 0 ? rowsToObjects(dataResult[0]) : []
+
+    return { list, total, page, pageSize }
+  }
+
   getByContract(contractId: number) {
     const result = getDb().exec(`SELECT * FROM payment_plans WHERE contract_id = ? ORDER BY due_date ASC`, [contractId])
     return result.length > 0 ? rowsToObjects(result[0]) : []
   }
 
-  markPaid(id: number, paidDate: string, invoiceNo: string) {
-    const sql = `UPDATE payment_plans SET status = 'paid', paid_date = ?, invoice_no = ?, invoice_received = 1, invoice_received_date = CURRENT_TIMESTAMP WHERE id = ?`
-    getDb().run(sql, [paidDate, invoiceNo, id])
+  markPaid(id: number, paidDate: string, invoiceNo: string, invoiceReceived: number) {
+    const sql = `UPDATE payment_plans SET status = 'paid', paid_date = ?, invoice_no = ?, invoice_received = ?, invoice_received_date = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE invoice_received_date END WHERE id = ?`
+    getDb().run(sql, [paidDate, invoiceNo, invoiceReceived, invoiceReceived, id])
     saveDatabase()
     return getDb().getRowsModified() > 0
   }

@@ -26,7 +26,7 @@ const api = {
     update: (id: number, data: any) => ipcRenderer.invoke('payment:update', id, data),
     delete: (id: number) => ipcRenderer.invoke('payment:delete', id),
     getByContract: (contractId: number) => ipcRenderer.invoke('payment:getByContract', contractId),
-    markPaid: (id: number, paidDate: string, invoiceNo: string) => ipcRenderer.invoke('payment:markPaid', id, paidDate, invoiceNo)
+    markPaid: (id: number, paidDate: string, invoiceNo: string, invoiceReceived: number) => ipcRenderer.invoke('payment:markPaid', id, paidDate, invoiceNo, invoiceReceived)
   },
   reminder: {
     list: (params: any) => ipcRenderer.invoke('reminder:list', params),

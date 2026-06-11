@@ -69,28 +69,7 @@ export const useContractStore = defineStore('contract', () => {
   }
 
   async function updateContract(id: number, data: Partial<Contract>) {
-    const oldContract = currentContract.value || await window.api.contract.get(id)
     const success = await window.api.contract.update(id, data)
-    if (success && oldContract) {
-      const changes: string[] = []
-      if (data.status && data.status !== oldContract.status) {
-        changes.push(`状态从 ${oldContract.status} 变更为 ${data.status}`)
-      }
-      if (data.end_date && data.end_date !== oldContract.end_date) {
-        changes.push(`到期日期从 ${oldContract.end_date} 变更为 ${data.end_date}`)
-      }
-      if (data.total_amount !== undefined && data.total_amount !== oldContract.total_amount) {
-        changes.push(`合同金额从 ${oldContract.total_amount} 变更为 ${data.total_amount}`)
-      }
-      if (changes.length > 0) {
-        await window.api.changeLog.create({
-          contract_id: id,
-          change_type: 'update',
-          description: changes.join('；'),
-          operator: '系统管理员'
-        })
-      }
-    }
     return success
   }
 
