@@ -1,0 +1,402 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #app {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.el-container {
+  height: 100%;
+}
+
+.el-aside {
+  background-color: #001529;
+  overflow-x: hidden;
+}
+
+.el-header {
+  background-color: #fff;
+  border-bottom: 1px solid #e6e6e6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+}
+
+.el-main {
+  background-color: #f0f2f5;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.logo {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 18px;
+  font-weight: bold;
+  background-color: #002140;
+}
+
+.logo .el-icon {
+  font-size: 24px;
+  margin-right: 8px;
+}
+
+.el-menu {
+  border-right: none;
+}
+
+.el-menu-item {
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+
+.el-menu-item:hover {
+  color: #fff !important;
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.el-menu-item.is-active {
+  color: #fff !important;
+  background-color: #1890ff !important;
+}
+
+.el-menu-item .el-icon {
+  margin-right: 8px;
+}
+
+.page-container {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  min-height: calc(100% - 40px);
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.filter-bar {
+  background: #fafafa;
+  padding: 16px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.filter-bar .el-form-item {
+  margin-bottom: 0;
+}
+
+.stats-card {
+  text-align: center;
+  padding: 20px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+}
+
+.stats-card .stats-value {
+  font-size: 32px;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.stats-card .stats-label {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.stats-card.success {
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+}
+
+.stats-card.warning {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.stats-card.info {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.stats-card.danger {
+  background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+
+.detail-section {
+  margin-bottom: 24px;
+}
+
+.detail-section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #262626;
+  margin-bottom: 16px;
+  padding-left: 12px;
+  border-left: 3px solid #1890ff;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.info-item .label {
+  font-size: 13px;
+  color: #8c8c8c;
+  margin-bottom: 4px;
+}
+
+.info-item .value {
+  font-size: 14px;
+  color: #262626;
+}
+
+.amount-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: #f5222d;
+}
+
+.upload-area {
+  border: 2px dashed #d9d9d9;
+  border-radius: 6px;
+  padding: 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.upload-area:hover {
+  border-color: #1890ff;
+}
+
+.document-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.document-item {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  background: #fafafa;
+  border-radius: 6px;
+}
+
+.document-item .doc-icon {
+  font-size: 32px;
+  margin-right: 12px;
+  color: #1890ff;
+}
+
+.document-item .doc-info {
+  flex: 1;
+}
+
+.document-item .doc-name {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.document-item .doc-meta {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+.change-log-item {
+  padding: 16px;
+  border-left: 3px solid #1890ff;
+  background: #f0f8ff;
+  margin-bottom: 12px;
+  border-radius: 0 6px 6px 0;
+}
+
+.change-log-item .log-time {
+  font-size: 12px;
+  color: #8c8c8c;
+  margin-bottom: 8px;
+}
+
+.change-log-item .log-content {
+  font-size: 14px;
+  color: #262626;
+}
+
+.change-log-item .log-operator {
+  font-size: 12px;
+  color: #8c8c8c;
+  margin-top: 8px;
+}
+
+.reminder-card {
+  padding: 16px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  border-left: 4px solid;
+}
+
+.reminder-card.high {
+  border-left-color: #f5222d;
+  background: #fff1f0;
+}
+
+.reminder-card.medium {
+  border-left-color: #faad14;
+  background: #fffbe6;
+}
+
+.reminder-card.low {
+  border-left-color: #1890ff;
+  background: #e6f7ff;
+}
+
+.reminder-card.done {
+  border-left-color: #52c41a;
+  background: #f6ffed;
+  opacity: 0.7;
+}
+
+.payment-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.payment-node {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #d9d9d9;
+  position: relative;
+}
+
+.payment-node.paid {
+  background: #52c41a;
+}
+
+.payment-node.pending {
+  background: #faad14;
+}
+
+.payment-node.overdue {
+  background: #f5222d;
+}
+
+.asset-card {
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  transition: all 0.3s;
+}
+
+.asset-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.asset-card.selected {
+  border-color: #1890ff;
+  background: #e6f7ff;
+}
+
+.asset-card .asset-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.asset-card .asset-no {
+  font-weight: 600;
+  color: #1890ff;
+}
+
+.asset-card .asset-name {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.asset-card .asset-meta {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  font-size: 13px;
+  color: #595959;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #8c8c8c;
+}
+
+.empty-state .el-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  color: #d9d9d9;
+}
+
+.toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.amount-format {
+  font-family: 'Roboto Mono', monospace;
+}
+
+.table-actions {
+  display: flex;
+  gap: 8px;
+}
+
+:deep(.el-table .cell) {
+  white-space: normal;
+  word-break: break-all;
+}
+
+.contract-obligation {
+  background: #f0f5ff;
+  padding: 12px;
+  border-radius: 6px;
+  margin-top: 12px;
+  border-left: 3px solid #1890ff;
+}
+
+.contract-obligation .obligation-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #1890ff;
+}
+
+.contract-obligation .obligation-item {
+  padding: 4px 0;
+  font-size: 13px;
+}
