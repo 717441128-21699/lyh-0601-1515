@@ -7,7 +7,8 @@ const api = {
     create: (data: any) => ipcRenderer.invoke('contract:create', data),
     update: (id: number, data: any) => ipcRenderer.invoke('contract:update', id, data),
     delete: (id: number) => ipcRenderer.invoke('contract:delete', id),
-    getStats: () => ipcRenderer.invoke('contract:getStats')
+    getStats: () => ipcRenderer.invoke('contract:getStats'),
+    getPerformanceSummary: (contractId: number) => ipcRenderer.invoke('contract:getPerformanceSummary', contractId)
   },
   asset: {
     list: (params: any) => ipcRenderer.invoke('asset:list', params),
@@ -26,7 +27,8 @@ const api = {
     update: (id: number, data: any) => ipcRenderer.invoke('payment:update', id, data),
     delete: (id: number) => ipcRenderer.invoke('payment:delete', id),
     getByContract: (contractId: number) => ipcRenderer.invoke('payment:getByContract', contractId),
-    markPaid: (id: number, paidDate: string, invoiceNo: string, invoiceReceived: number) => ipcRenderer.invoke('payment:markPaid', id, paidDate, invoiceNo, invoiceReceived)
+    markPaid: (id: number, paidDate: string, invoiceNo: string, invoiceReceived: number) => ipcRenderer.invoke('payment:markPaid', id, paidDate, invoiceNo, invoiceReceived),
+    recordInvoice: (id: number, invoiceNo: string, receivedDate: string) => ipcRenderer.invoke('payment:recordInvoice', id, invoiceNo, receivedDate)
   },
   reminder: {
     list: (params: any) => ipcRenderer.invoke('reminder:list', params),
@@ -35,7 +37,7 @@ const api = {
     update: (id: number, data: any) => ipcRenderer.invoke('reminder:update', id, data),
     delete: (id: number) => ipcRenderer.invoke('reminder:delete', id),
     getPending: () => ipcRenderer.invoke('reminder:getPending'),
-    markDone: (id: number) => ipcRenderer.invoke('reminder:markDone', id),
+    markDone: (id: number, note?: string) => ipcRenderer.invoke('reminder:markDone', id, note),
     generateTodos: () => ipcRenderer.invoke('reminder:generateTodos'),
     getByContract: (contractId: number) => ipcRenderer.invoke('reminder:getByContract', contractId)
   },
@@ -54,8 +56,9 @@ const api = {
     create: (data: any) => ipcRenderer.invoke('changeLog:create', data)
   },
   export: {
-    monthlyLedger: (year: number, month: number) => ipcRenderer.invoke('export:monthlyLedger', year, month),
-    expiringList: () => ipcRenderer.invoke('export:expiringList')
+    monthlyLedger: (year: number, month: number, filters?: any) => ipcRenderer.invoke('export:monthlyLedger', year, month, filters),
+    expiringList: () => ipcRenderer.invoke('export:expiringList'),
+    previewMonthlyLedger: (year: number, month: number, filters?: any) => ipcRenderer.invoke('export:previewMonthlyLedger', year, month, filters)
   }
 }
 

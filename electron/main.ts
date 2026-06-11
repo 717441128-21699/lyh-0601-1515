@@ -67,6 +67,10 @@ ipcMain.handle('contract:create', (_, data) => contractService.create(data))
 ipcMain.handle('contract:update', (_, id, data) => contractService.update(id, data))
 ipcMain.handle('contract:delete', (_, id) => contractService.delete(id))
 ipcMain.handle('contract:getStats', () => contractService.getStats())
+ipcMain.handle('contract:getPerformanceSummary', (_, id) => contractService.getPerformanceSummary(id))
+ipcMain.handle('payment:recordInvoice', (_, id, invoiceNo, receivedDate) => paymentService.recordInvoice(id, invoiceNo, receivedDate))
+ipcMain.handle('reminder:markDone', (_, id, note) => reminderService.markDone(id, note))
+ipcMain.handle('export:previewMonthlyLedger', (_, year, month, filters) => exportService.previewMonthlyLedger(year, month, filters))
 
 ipcMain.handle('asset:list', (_, params) => assetService.list(params))
 ipcMain.handle('asset:get', (_, id) => assetService.get(id))
@@ -121,14 +125,14 @@ ipcMain.handle('changeLog:list', (_, params) => changeLogService.list(params))
 ipcMain.handle('changeLog:getByContract', (_, contractId) => changeLogService.getByContract(contractId))
 ipcMain.handle('changeLog:create', (_, data) => changeLogService.create(data))
 
-ipcMain.handle('export:monthlyLedger', (_, year, month) => {
+ipcMain.handle('export:monthlyLedger', (_, year, month, filters) => {
   const result = dialog.showSaveDialogSync(mainWindow!, {
     title: '导出月度合同台账',
     defaultPath: `合同台账_${year}年${month}月.xlsx`,
     filters: [{ name: 'Excel文件', extensions: ['xlsx'] }]
   })
   if (result) {
-    return exportService.exportMonthlyLedger(year, month, result)
+    return exportService.exportMonthlyLedger(year, month, result, filters)
   }
   return null
 })

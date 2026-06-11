@@ -117,6 +117,7 @@ function createTables(db: Database) {
       status TEXT DEFAULT 'pending',
       priority TEXT DEFAULT 'medium',
       completed_at TEXT,
+      completed_note TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -143,6 +144,10 @@ function createTables(db: Database) {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
   `)
+
+  try {
+    db.exec(`ALTER TABLE reminders ADD COLUMN completed_note TEXT`)
+  } catch (e) {}
 }
 
 function seedMockData(db: Database) {
@@ -463,6 +468,48 @@ class ContractService extends BaseService<Contract> {
 
     return modified
   }
+
+  getPerformanceSummary(contractId: number) {
+    const paymentSql = `
+      SELECT 
+        COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) as paid,
+        COALESCE(SUM(amount), 0) as total
+      FROM payment_plans WHERE contract_id = ?
+    `
+    const paymentResult = getDb().exec(paymentSql, [contractId])
+    const paymentRow = paymentResult[0]?.values[0] || [0, 0]
+    const paid = Number(paymentRow[0])
+    const total = Number(paymentRow[1])
+    const percentage = total > 0 ? Math.round((paid / total) * 100) : 0
+
+    const assetSql = `SELECT COUNT(*) as bound FROM assets WHERE contract_id = ?`
+    const assetResult = getDb().exec(assetSql, [contractId])
+    const bound = Number(assetResult[0]?.values[0]?.[0] || 0)
+
+    const reminderSql = `
+      SELECT 
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done,
+        COUNT(*) as total
+      FROM reminders WHERE contract_id = ?
+    `
+    const reminderResult = getDb().exec(reminderSql, [contractId])
+    const reminderRow = reminderResult[0]?.values[0] || [0, 0, 0]
+    const pending = Number(reminderRow[0])
+    const done = Number(reminderRow[1])
+    const reminderTotal = Number(reminderRow[2])
+
+    const docSql = `SELECT COUNT(*) as uploaded FROM documents WHERE contract_id = ?`
+    const docResult = getDb().exec(docSql, [contractId])
+    const uploaded = Number(docResult[0]?.values[0]?.[0] || 0)
+
+    return {
+      paymentProgress: { paid, total, percentage },
+      assets: { bound },
+      reminders: { pending, done, total: reminderTotal },
+      documents: { uploaded }
+    }
+  }
 }
 
 interface Asset {
@@ -583,8 +630,15 @@ class PaymentService extends BaseService<PaymentPlan> {
   }
 
   markPaid(id: number, paidDate: string, invoiceNo: string, invoiceReceived: number) {
-    const sql = `UPDATE payment_plans SET status = 'paid', paid_date = ?, invoice_no = ?, invoice_received = ?, invoice_received_date = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE invoice_received_date END WHERE id = ?`
-    getDb().run(sql, [paidDate, invoiceNo, invoiceReceived, invoiceReceived, id])
+    const sql = `UPDATE payment_plans SET status = 'paid', paid_date = ?, invoice_no = ?, invoice_received = ?, invoice_received_date = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE NULL END, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+    getDb().run(sql, [paidDate, invoiceNo || null, invoiceReceived, invoiceReceived, id])
+    saveDatabase()
+    return getDb().getRowsModified() > 0
+  }
+
+  recordInvoice(id: number, invoiceNo: string, receivedDate: string) {
+    const sql = `UPDATE payment_plans SET invoice_no = ?, invoice_received = 1, invoice_received_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+    getDb().run(sql, [invoiceNo, receivedDate, id])
     saveDatabase()
     return getDb().getRowsModified() > 0
   }
@@ -600,6 +654,7 @@ interface Reminder {
   status: string
   priority: string
   completed_at: string | null
+  completed_note: string | null
   created_at: string
   contract_no?: string
   contract_name?: string
@@ -624,9 +679,9 @@ class ReminderService extends BaseService<Reminder> {
     return result.length > 0 ? rowsToObjects(result[0]) : []
   }
 
-  markDone(id: number) {
-    const sql = `UPDATE reminders SET status = 'done', completed_at = CURRENT_TIMESTAMP WHERE id = ?`
-    getDb().run(sql, [id])
+  markDone(id: number, note?: string) {
+    const sql = `UPDATE reminders SET status = 'done', completed_at = CURRENT_TIMESTAMP, completed_note = ? WHERE id = ?`
+    getDb().run(sql, [note || null, id])
     saveDatabase()
     return getDb().getRowsModified() > 0
   }
@@ -738,10 +793,27 @@ class ChangeLogService extends BaseService<ChangeLog> {
 }
 
 class ExportService {
-  exportMonthlyLedger(year: number, month: number, filePath: string) {
+  private buildLedgerQuery(year: number, month: number, filters?: { status?: string[]; manager?: string; assetCategory?: string }) {
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`
     const endDate = dayjs(startDate).endOf('month').format('YYYY-MM-DD')
+    const whereClauses: string[] = [`c.created_at BETWEEN ? AND ?`]
+    const values: any[] = [startDate, endDate]
 
+    if (filters?.status && filters.status.length > 0) {
+      const placeholders = filters.status.map(() => '?').join(',')
+      whereClauses.push(`c.status IN (${placeholders})`)
+      values.push(...filters.status)
+    }
+    if (filters?.manager) {
+      whereClauses.push(`c.manager LIKE ?`)
+      values.push(`%${filters.manager}%`)
+    }
+    if (filters?.assetCategory) {
+      whereClauses.push(`c.asset_category = ?`)
+      values.push(filters.assetCategory)
+    }
+
+    const whereSql = `WHERE ${whereClauses.join(' AND ')}`
     const sql = `
       SELECT 
         c.contract_no, c.contract_name, c.contract_type, c.supplier, c.asset_category,
@@ -752,31 +824,69 @@ class ExportService {
       FROM contracts c
       LEFT JOIN assets a ON c.id = a.contract_id
       LEFT JOIN payment_plans p ON c.id = p.contract_id
-      WHERE c.created_at BETWEEN ? AND ?
+      ${whereSql}
       GROUP BY c.id
       ORDER BY c.created_at DESC
     `
-    const result = getDb().exec(sql, [startDate, endDate])
+    return { sql, values, startDate, endDate }
+  }
+
+  previewMonthlyLedger(year: number, month: number, filters?: { status?: string[]; manager?: string; assetCategory?: string }) {
+    const { sql, values } = this.buildLedgerQuery(year, month, filters)
+    const result = getDb().exec(sql, values)
     const data = result.length > 0 ? rowsToObjects(result[0]) : []
 
     const typeMap: Record<string, string> = { purchase: '采购', lease: '租赁', maintenance: '维保' }
     const statusMap: Record<string, string> = { active: '执行中', pending: '待执行', completed: '已完成', terminated: '已终止' }
 
-    const exportData = data.map((row: any) => ({
+    const previewData = data.map((row: any) => ({
+      contract_no: row.contract_no,
+      contract_name: row.contract_name,
+      contract_type: typeMap[row.contract_type] || row.contract_type,
+      supplier: row.supplier,
+      asset_category: row.asset_category,
+      start_date: row.start_date,
+      end_date: row.end_date,
+      total_amount: row.total_amount,
+      status: statusMap[row.status] || row.status,
+      manager: row.manager,
+      department: row.department,
+      asset_count: row.asset_count || 0,
+      paid_amount: row.paid_amount || 0,
+      pending_amount: row.pending_amount || 0
+    }))
+
+    const totalAmount = previewData.reduce((sum: number, row: any) => sum + row.total_amount, 0)
+    const totalPaid = previewData.reduce((sum: number, row: any) => sum + row.paid_amount, 0)
+    const totalPending = previewData.reduce((sum: number, row: any) => sum + row.pending_amount, 0)
+
+    return {
+      list: previewData,
+      count: previewData.length,
+      totalAmount,
+      totalPaid,
+      totalPending
+    }
+  }
+
+  exportMonthlyLedger(year: number, month: number, filePath: string, filters?: { status?: string[]; manager?: string; assetCategory?: string }) {
+    const preview = this.previewMonthlyLedger(year, month, filters)
+
+    const exportData = preview.list.map((row: any) => ({
       '合同编号': row.contract_no,
       '合同名称': row.contract_name,
-      '合同类型': typeMap[row.contract_type] || row.contract_type,
+      '合同类型': row.contract_type,
       '供应商': row.supplier,
       '资产类别': row.asset_category,
       '开始日期': row.start_date,
       '结束日期': row.end_date,
       '合同金额(元)': row.total_amount,
-      '合同状态': statusMap[row.status] || row.status,
+      '合同状态': row.status,
       '负责人': row.manager,
       '所属部门': row.department,
-      '关联资产数': row.asset_count || 0,
-      '已支付金额(元)': row.paid_amount || 0,
-      '待支付金额(元)': row.pending_amount || 0
+      '关联资产数': row.asset_count,
+      '已支付金额(元)': row.paid_amount,
+      '待支付金额(元)': row.pending_amount
     }))
 
     const wb = XLSX.utils.book_new()

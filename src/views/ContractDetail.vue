@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useContractStore } from '@/stores/contract'
 import dayjs from 'dayjs'
-import type { Contract, Document, ChangeLog } from '@/types'
+import type { Contract, Document, ChangeLog, Reminder } from '@/types'
 import {
   CONTRACT_TYPE_OPTIONS,
   CONTRACT_STATUS_OPTIONS,
@@ -25,6 +25,32 @@ const changeLogs = ref<ChangeLog[]>([])
 const loading = ref(false)
 const documentLoading = ref(false)
 const changeLogLoading = ref(false)
+const reminderLoading = ref(false)
+const reminders = ref<Reminder[]>([])
+
+const performanceSummary = ref<{
+  paymentProgress: { paid: number; total: number; percentage: number }
+  assets: { bound: number }
+  reminders: { pending: number; done: number; total: number }
+  documents: { uploaded: number }
+} | null>(null)
+
+const activeTab = ref('info')
+
+const formatAmount = (amount: number) => {
+  return new Intl.NumberFormat('zh-CN', {
+    style: 'currency',
+    currency: 'CNY'
+  }).format(amount)
+}
+
+const scrollToSection = (sectionId: string) => {
+  activeTab.value = sectionId
+  const element = document.getElementById(sectionId)
+  if (element) {
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
 
 const editDialogVisible = ref(false)
 const reminderDialogVisible = ref(false)
@@ -132,6 +158,46 @@ async function loadChangeLogs() {
   }
 }
 
+async function loadPerformanceSummary() {
+  try {
+    performanceSummary.value = await window.api.contract.getPerformanceSummary(contractId.value)
+  } catch (e) {
+    console.error('加载履约进度失败', e)
+  }
+}
+
+async function loadReminders() {
+  reminderLoading.value = true
+  try {
+    reminders.value = await window.api.reminder.getByContract(contractId.value)
+  } catch (e) {
+    ElMessage.error('加载提醒列表失败')
+    console.error(e)
+  } finally {
+    reminderLoading.value = false
+  }
+}
+
+function getReminderTypeLabel(type: string) {
+  const option = REMINDER_TYPE_OPTIONS.find(o => o.value === type)
+  return option?.label || type
+}
+
+function getReminderTypeType(type: string) {
+  const option = REMINDER_TYPE_OPTIONS.find(o => o.value === type)
+  return option?.type || 'info'
+}
+
+function getReminderPriorityLabel(priority: string) {
+  const option = REMINDER_PRIORITY_OPTIONS.find(o => o.value === priority)
+  return option?.label || priority
+}
+
+function getReminderPriorityType(priority: string) {
+  const option = REMINDER_PRIORITY_OPTIONS.find(o => o.value === priority)
+  return option?.type || 'info'
+}
+
 function goBack() {
   router.back()
 }
@@ -152,6 +218,7 @@ async function handleEditSubmit() {
       editDialogVisible.value = false
       await loadContractDetail()
       await loadChangeLogs()
+      await loadPerformanceSummary()
     } else {
       ElMessage.error('更新失败')
     }
@@ -172,6 +239,7 @@ async function handleUpload() {
       ElMessage.success('上传成功')
       uploadDialogVisible.value = false
       await loadDocuments()
+      await loadPerformanceSummary()
     } else {
       ElMessage.error('上传失败')
     }
@@ -231,6 +299,8 @@ async function handleReminderSubmit() {
     if (id) {
       ElMessage.success('提醒设置成功')
       reminderDialogVisible.value = false
+      await loadReminders()
+      await loadPerformanceSummary()
     } else {
       ElMessage.error('设置失败')
     }
@@ -273,6 +343,8 @@ onMounted(() => {
     loadContractDetail()
     loadDocuments()
     loadChangeLogs()
+    loadPerformanceSummary()
+    loadReminders()
   }
 })
 </script>
@@ -370,7 +442,97 @@ onMounted(() => {
         </el-descriptions>
       </el-card>
 
-      <el-card class="section-card">
+      <el-card class="section-card" id="performance">
+        <template #header>
+          <div class="card-header">
+            <el-icon><DataLine /></el-icon>
+            <span>履约进度总览</span>
+          </div>
+        </template>
+        <div class="performance-grid" v-if="performanceSummary">
+          <div
+            class="performance-card payment"
+            @click="router.push('/payments')"
+          >
+            <div class="perf-icon">
+              <el-icon><Money /></el-icon>
+            </div>
+            <div class="perf-content">
+              <div class="perf-title">付款进度</div>
+              <div class="perf-main">
+                <span class="perf-value">{{ performanceSummary.paymentProgress.percentage }}%</span>
+              </div>
+              <div class="perf-sub">
+                已付 {{ formatAmount(performanceSummary.paymentProgress.paid) }} /
+                总计 {{ formatAmount(performanceSummary.paymentProgress.total) }}
+              </div>
+              <el-progress
+                :percentage="performanceSummary.paymentProgress.percentage"
+                :stroke-width="8"
+                :show-text="false"
+                color="#67c23a"
+              />
+            </div>
+          </div>
+
+          <div
+            class="performance-card asset"
+            @click="router.push('/assets')"
+          >
+            <div class="perf-icon">
+              <el-icon><Box /></el-icon>
+            </div>
+            <div class="perf-content">
+              <div class="perf-title">关联资产</div>
+              <div class="perf-main">
+                <span class="perf-value">{{ performanceSummary.assets.bound }}</span>
+                <span class="perf-unit">台</span>
+              </div>
+              <div class="perf-sub">已绑定设备数量</div>
+            </div>
+          </div>
+
+          <div
+            class="performance-card reminder"
+            @click="scrollToSection('reminders')"
+          >
+            <div class="perf-icon">
+              <el-icon><Bell /></el-icon>
+            </div>
+            <div class="perf-content">
+              <div class="perf-title">待办提醒</div>
+              <div class="perf-main">
+                <span class="perf-value warning">{{ performanceSummary.reminders.pending }}</span>
+                <span class="perf-unit">项待办</span>
+              </div>
+              <div class="perf-sub">
+                已完成 {{ performanceSummary.reminders.done }} /
+                共 {{ performanceSummary.reminders.total }} 项
+              </div>
+            </div>
+          </div>
+
+          <div
+            class="performance-card document"
+            @click="scrollToSection('documents')"
+          >
+            <div class="perf-icon">
+              <el-icon><Folder /></el-icon>
+            </div>
+            <div class="perf-content">
+              <div class="perf-title">文档资料</div>
+              <div class="perf-main">
+                <span class="perf-value">{{ performanceSummary.documents.uploaded }}</span>
+                <span class="perf-unit">份</span>
+              </div>
+              <div class="perf-sub">已上传文件数量</div>
+            </div>
+          </div>
+        </div>
+        <el-skeleton v-else :rows="3" animated />
+      </el-card>
+
+      <el-card class="section-card" id="documents">
         <template #header>
           <div class="card-header">
             <el-icon><Folder /></el-icon>
@@ -411,6 +573,58 @@ onMounted(() => {
           </el-table-column>
         </el-table>
         <el-empty v-if="!documentLoading && documents.length === 0" description="暂无文档" />
+      </el-card>
+
+      <el-card class="section-card" id="reminders">
+        <template #header>
+          <div class="card-header">
+            <el-icon><Bell /></el-icon>
+            <span>提醒事项</span>
+            <el-button size="small" type="warning" class="ml-auto" @click="openReminderDialog">
+              <el-icon><Plus /></el-icon>
+              添加提醒
+            </el-button>
+          </div>
+        </template>
+        <div v-loading="reminderLoading" class="reminder-list">
+          <div
+            v-for="reminder in reminders"
+            :key="reminder.id"
+            class="reminder-item"
+            :class="{ done: reminder.status === 'done' }"
+          >
+            <div class="reminder-header">
+              <div class="reminder-tags">
+                <el-tag :type="getReminderTypeType(reminder.reminder_type)" size="small">
+                  {{ getReminderTypeLabel(reminder.reminder_type) }}
+                </el-tag>
+                <el-tag :type="getReminderPriorityType(reminder.priority)" size="small">
+                  {{ getReminderPriorityLabel(reminder.priority) }}
+                </el-tag>
+                <el-tag
+                  v-if="reminder.status === 'done'"
+                  type="success"
+                  size="small"
+                >
+                  已完成
+                </el-tag>
+              </div>
+              <div class="reminder-date">
+                {{ dayjs(reminder.due_date).format('YYYY-MM-DD') }}
+              </div>
+            </div>
+            <div class="reminder-title">{{ reminder.title }}</div>
+            <div v-if="reminder.description" class="reminder-desc">{{ reminder.description }}</div>
+            <div v-if="reminder.status === 'done' && reminder.completed_note" class="reminder-note">
+              <el-icon><CircleCheck /></el-icon>
+              <span>处理说明：{{ reminder.completed_note }}</span>
+            </div>
+            <div v-if="reminder.status === 'done' && reminder.completed_at" class="reminder-completed">
+              完成时间：{{ dayjs(reminder.completed_at).format('YYYY-MM-DD HH:mm') }}
+            </div>
+          </div>
+          <el-empty v-if="!reminderLoading && reminders.length === 0" description="暂无提醒事项" />
+        </div>
       </el-card>
 
       <el-card class="section-card">
@@ -783,6 +997,196 @@ onMounted(() => {
 .gap-3 {
   gap: 12px;
 }
+
+.performance-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.performance-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 1px solid transparent;
+}
+
+.performance-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.performance-card.payment {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border-color: #7dd3fc;
+}
+
+.performance-card.asset {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border-color: #86efac;
+}
+
+.performance-card.reminder {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border-color: #fcd34d;
+}
+
+.performance-card.document {
+  background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+  border-color: #d8b4fe;
+}
+
+.perf-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.performance-card.payment .perf-icon {
+  background: #0ea5e9;
+  color: #fff;
+}
+
+.performance-card.asset .perf-icon {
+  background: #22c55e;
+  color: #fff;
+}
+
+.performance-card.reminder .perf-icon {
+  background: #f59e0b;
+  color: #fff;
+}
+
+.performance-card.document .perf-icon {
+  background: #a855f7;
+  color: #fff;
+}
+
+.perf-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.perf-title {
+  font-size: 14px;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.perf-main {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.perf-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.perf-value.warning {
+  color: #f59e0b;
+}
+
+.perf-unit {
+  font-size: 14px;
+  color: #64748b;
+}
+
+.perf-sub {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.perf-content .el-progress {
+  margin-top: 4px;
+}
+
+.reminder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reminder-item {
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  transition: all 0.2s ease;
+}
+
+.reminder-item:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.reminder-item.done {
+  background: #f8fafc;
+  opacity: 0.75;
+}
+
+.reminder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.reminder-tags {
+  display: flex;
+  gap: 8px;
+}
+
+.reminder-date {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.reminder-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 6px;
+}
+
+.reminder-desc {
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+.reminder-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #f0fdf4;
+  border-left: 3px solid #22c55e;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #166534;
+  margin-bottom: 6px;
+}
+
+.reminder-completed {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
 
 .mb-2 {
   margin-bottom: 8px;

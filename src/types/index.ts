@@ -65,6 +65,7 @@ export interface Reminder {
   status: 'pending' | 'done' | 'cancelled'
   priority: 'high' | 'medium' | 'low'
   completed_at: string | null
+  completed_note: string | null
   created_at: string
   contract_no?: string
   contract_name?: string
@@ -169,6 +170,12 @@ declare global {
         update: (id: number, data: Partial<Contract>) => Promise<boolean>
         delete: (id: number) => Promise<boolean>
         getStats: () => Promise<ContractStats>
+        getPerformanceSummary: (contractId: number) => Promise<{
+          paymentProgress: { paid: number; total: number; percentage: number }
+          assets: { bound: number }
+          reminders: { pending: number; done: number; total: number }
+          documents: { uploaded: number }
+        }>
       }
       asset: {
         list: (params: any) => Promise<PageResult<Asset>>
@@ -187,7 +194,8 @@ declare global {
         update: (id: number, data: Partial<PaymentPlan>) => Promise<boolean>
         delete: (id: number) => Promise<boolean>
         getByContract: (contractId: number) => Promise<PaymentPlan[]>
-        markPaid: (id: number, paidDate: string, invoiceNo: string) => Promise<boolean>
+        markPaid: (id: number, paidDate: string, invoiceNo: string, invoiceReceived: number) => Promise<boolean>
+        recordInvoice: (id: number, invoiceNo: string, receivedDate: string) => Promise<boolean>
       }
       reminder: {
         list: (params: any) => Promise<PageResult<Reminder>>
@@ -196,7 +204,7 @@ declare global {
         update: (id: number, data: Partial<Reminder>) => Promise<boolean>
         delete: (id: number) => Promise<boolean>
         getPending: () => Promise<Reminder[]>
-        markDone: (id: number) => Promise<boolean>
+        markDone: (id: number, note?: string) => Promise<boolean>
         generateTodos: () => Promise<Reminder[]>
         getByContract: (contractId: number) => Promise<Reminder[]>
       }
@@ -215,7 +223,7 @@ declare global {
         create: (data: Partial<ChangeLog>) => Promise<number>
       }
       export: {
-        monthlyLedger: (year: number, month: number) => Promise<any>
+        monthlyLedger: (year: number, month: number, filters?: { status?: string[]; manager?: string; assetCategory?: string }) => Promise<any>
         expiringList: () => Promise<any>
       }
     }

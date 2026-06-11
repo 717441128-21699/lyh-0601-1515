@@ -34,6 +34,20 @@ const expandedIds = ref<number[]>([])
 
 const typeFilter = ref('all')
 const statusFilter = ref('pending')
+const timeFilter = ref('all')
+
+const doneDialogVisible = ref(false)
+const doneId = ref<number | null>(null)
+const doneForm = reactive({
+  note: ''
+})
+
+const TIME_TABS = [
+  { value: 'all', label: '全部' },
+  { value: 'overdue', label: '已逾期' },
+  { value: '7days', label: '7天内到期' },
+  { value: '30days', label: '30天内到期' }
+]
 
 const dialogVisible = ref(false)
 const dialogTitle = ref('新增提醒')
@@ -81,6 +95,25 @@ const filteredReminders = computed(() => {
   
   result = result.filter(r => r.status === statusFilter.value)
   
+  if (statusFilter.value === 'pending' && timeFilter.value !== 'all') {
+    const today = dayjs().startOf('day')
+    if (timeFilter.value === 'overdue') {
+      result = result.filter(r => dayjs(r.due_date).isBefore(today))
+    } else if (timeFilter.value === '7days') {
+      result = result.filter(r => {
+        const due = dayjs(r.due_date).startOf('day')
+        const diff = due.diff(today, 'day')
+        return diff >= 0 && diff <= 7
+      })
+    } else if (timeFilter.value === '30days') {
+      result = result.filter(r => {
+        const due = dayjs(r.due_date).startOf('day')
+        const diff = due.diff(today, 'day')
+        return diff >= 0 && diff <= 30
+      })
+    }
+  }
+  
   return result
 })
 
@@ -89,6 +122,7 @@ const pendingReminders = computed(() => reminderList.value.filter(r => r.status 
 const stats = computed(() => {
   const today = dayjs().startOf('day')
   const sevenDaysLater = dayjs().add(7, 'day').endOf('day')
+  const thirtyDaysLater = dayjs().add(30, 'day').endOf('day')
   
   const todayDue = pendingReminders.value.filter(r => {
     const due = dayjs(r.due_date)
@@ -100,12 +134,25 @@ const stats = computed(() => {
     return due.isAfter(today) && due.isBefore(sevenDaysLater)
   }).length
   
+  const overdue = pendingReminders.value.filter(r => {
+    const due = dayjs(r.due_date)
+    return due.isBefore(today)
+  }).length
+  
+  const in30Days = pendingReminders.value.filter(r => {
+    const due = dayjs(r.due_date).startOf('day')
+    const diff = due.diff(today, 'day')
+    return diff >= 0 && diff <= 30
+  }).length
+  
   const completed = reminderList.value.filter(r => r.status === 'done').length
   
   return {
     total: pendingReminders.value.length,
     todayDue,
     upcoming,
+    overdue,
+    in30Days,
     completed
   }
 })
@@ -256,22 +303,27 @@ function handleDelete(id: number) {
   deleteDialogVisible.value = true
 }
 
-async function handleMarkDone(id: number) {
-  try {
-    await ElMessageBox.confirm('确定将该提醒标记为已完成吗？', '确认操作', {
-      type: 'warning'
-    })
-    const success = await window.api.reminder.markDone(id)
-    if (success) {
-      ElMessage.success('标记成功')
-      loadReminders()
-    } else {
-      ElMessage.error('标记失败')
-    }
-  } catch (e) {
-    if (e !== 'cancel') {
+function handleMarkDone(id: number) {
+  doneId.value = id
+  doneForm.note = ''
+  doneDialogVisible.value = true
+}
+
+async function handleMarkDoneSubmit() {
+  if (doneId.value) {
+    try {
+      const success = await window.api.reminder.markDone(doneId.value, doneForm.note)
+      if (success) {
+        ElMessage.success('标记成功')
+        doneDialogVisible.value = false
+        doneId.value = null
+        doneForm.note = ''
+        loadReminders()
+      } else {
+        ElMessage.error('标记失败')
+      }
+    } catch (e) {
       ElMessage.error('操作失败')
-      console.error(e)
     }
   }
 }
@@ -355,6 +407,17 @@ function resetForm() {
             />
           </el-tabs>
         </div>
+        <div v-if="statusFilter === 'pending'" class="filter-time">
+          <el-radio-group v-model="timeFilter" size="small">
+            <el-radio-button 
+              v-for="tab in TIME_TABS" 
+              :key="tab.value" 
+              :label="tab.value"
+            >
+              {{ tab.label }}
+            </el-radio-button>
+          </el-radio-group>
+        </div>
         <div class="filter-status">
           <el-radio-group v-model="statusFilter" size="small">
             <el-radio-button 
@@ -384,7 +447,7 @@ function resetForm() {
     </el-card>
 
     <el-row :gutter="16" class="stats-row">
-      <el-col :span="6">
+      <el-col :span="4">
         <div class="stat-card stat-total">
           <div class="stat-icon">
             <el-icon><Bell /></el-icon>
@@ -395,7 +458,18 @@ function resetForm() {
           </div>
         </div>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="4">
+        <div class="stat-card stat-overdue">
+          <div class="stat-icon">
+            <el-icon><Warning /></el-icon>
+          </div>
+          <div class="stat-content">
+            <div class="stat-value">{{ stats.overdue }}</div>
+            <div class="stat-label">已逾期</div>
+          </div>
+        </div>
+      </el-col>
+      <el-col :span="4">
         <div class="stat-card stat-today">
           <div class="stat-icon">
             <el-icon><Clock /></el-icon>
@@ -406,18 +480,29 @@ function resetForm() {
           </div>
         </div>
       </el-col>
-      <el-col :span="6">
-        <div class="stat-card stat-upcoming">
+      <el-col :span="4">
+        <div class="stat-card stat-7days">
           <div class="stat-icon">
             <el-icon><Calendar /></el-icon>
           </div>
           <div class="stat-content">
             <div class="stat-value">{{ stats.upcoming }}</div>
-            <div class="stat-label">即将到期(7天内)</div>
+            <div class="stat-label">7天内到期</div>
           </div>
         </div>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="4">
+        <div class="stat-card stat-30days">
+          <div class="stat-icon">
+            <el-icon><Calendar /></el-icon>
+          </div>
+          <div class="stat-content">
+            <div class="stat-value">{{ stats.in30Days }}</div>
+            <div class="stat-label">30天内到期</div>
+          </div>
+        </div>
+      </el-col>
+      <el-col :span="4">
         <div class="stat-card stat-completed">
           <div class="stat-icon">
             <el-icon><CircleCheck /></el-icon>
@@ -539,6 +624,10 @@ function resetForm() {
                       <div class="detail-title">创建时间</div>
                       <div class="detail-content">{{ dayjs(reminder.created_at).format('YYYY-MM-DD HH:mm') }}</div>
                     </div>
+                    <div v-if="reminder.completed_note" class="detail-section">
+                      <div class="detail-title">处理说明</div>
+                      <div class="detail-content note">{{ reminder.completed_note }}</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -652,6 +741,10 @@ function resetForm() {
                     <div class="detail-section">
                       <div class="detail-title">创建时间</div>
                       <div class="detail-content">{{ dayjs(reminder.created_at).format('YYYY-MM-DD HH:mm') }}</div>
+                    </div>
+                    <div v-if="reminder.completed_note" class="detail-section">
+                      <div class="detail-title">处理说明</div>
+                      <div class="detail-content note">{{ reminder.completed_note }}</div>
                     </div>
                   </div>
                 </div>
@@ -767,6 +860,10 @@ function resetForm() {
                       <div class="detail-title">创建时间</div>
                       <div class="detail-content">{{ dayjs(reminder.created_at).format('YYYY-MM-DD HH:mm') }}</div>
                     </div>
+                    <div v-if="reminder.completed_note" class="detail-section">
+                      <div class="detail-title">处理说明</div>
+                      <div class="detail-content note">{{ reminder.completed_note }}</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -856,6 +953,10 @@ function resetForm() {
                     <div class="detail-section">
                       <div class="detail-title">创建时间</div>
                       <div class="detail-content">{{ dayjs(reminder.created_at).format('YYYY-MM-DD HH:mm') }}</div>
+                    </div>
+                    <div v-if="reminder.completed_note" class="detail-section">
+                      <div class="detail-title">处理说明</div>
+                      <div class="detail-content note">{{ reminder.completed_note }}</div>
                     </div>
                   </div>
                 </div>
@@ -969,6 +1070,32 @@ function resetForm() {
         <el-button type="danger" @click="confirmDelete">确定删除</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="doneDialogVisible"
+      title="标记完成"
+      width="500px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-form
+        :model="doneForm"
+        label-width="80px"
+      >
+        <el-form-item label="处理说明">
+          <el-input
+            v-model="doneForm.note"
+            type="textarea"
+            :rows="4"
+            placeholder="请输入处理说明（可选）"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="doneDialogVisible = false">取消</el-button>
+        <el-button type="success" @click="handleMarkDoneSubmit">确认完成</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -999,6 +1126,10 @@ function resetForm() {
 }
 
 .filter-status {
+  flex-shrink: 0;
+}
+
+.filter-time {
   flex-shrink: 0;
 }
 
@@ -1037,12 +1168,20 @@ function resetForm() {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
+.stat-overdue .stat-icon {
+  background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+
 .stat-today .stat-icon {
   background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
 }
 
-.stat-upcoming .stat-icon {
+.stat-7days .stat-icon {
   background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.stat-30days .stat-icon {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .stat-completed .stat-icon {
@@ -1227,6 +1366,14 @@ function resetForm() {
   font-size: 14px;
   color: #606266;
   line-height: 1.6;
+}
+
+.detail-content.note {
+  background: #f0f9eb;
+  padding: 12px 16px;
+  border-radius: 6px;
+  border-left: 3px solid #67c23a;
+  color: #67c23a;
 }
 
 .empty-state {

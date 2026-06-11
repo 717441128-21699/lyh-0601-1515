@@ -62,7 +62,30 @@ const formRules: FormRules = {
 
 const paidFormRules: FormRules = {
   paid_date: [{ required: true, message: '请选择实际支付日期', trigger: 'change' }],
-  invoice_no: [{ required: true, message: '请输入发票号', trigger: 'blur' }]
+  invoice_no: [
+    {
+      validator: (rule, value, callback) => {
+        if (paidForm.invoice_received === 1 && !value) {
+          callback(new Error('请输入发票号'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur'
+    }
+  ]
+}
+
+const invoiceDialogVisible = ref(false)
+const invoiceFormRef = ref<FormInstance>()
+const invoiceForm = reactive({
+  invoice_no: '',
+  invoice_received_date: ''
+})
+
+const invoiceFormRules: FormRules = {
+  invoice_no: [{ required: true, message: '请输入发票号', trigger: 'blur' }],
+  invoice_received_date: [{ required: true, message: '请选择发票收到日期', trigger: 'change' }]
 }
 
 const paidAmount = computed(() => {
@@ -214,6 +237,42 @@ function handleMarkPaid(row: PaymentPlan) {
   paidForm.invoice_received = row.invoice_received || 0
   deleteId.value = row.id
   paidDialogVisible.value = true
+}
+
+function handleRecordInvoice(row: PaymentPlan) {
+  invoiceForm.invoice_no = row.invoice_no || ''
+  invoiceForm.invoice_received_date = row.invoice_received_date || dayjs().format('YYYY-MM-DD')
+  deleteId.value = row.id
+  invoiceDialogVisible.value = true
+}
+
+async function handleRecordInvoiceSubmit() {
+  if (!invoiceFormRef.value) return
+  
+  await invoiceFormRef.value.validate(async (valid) => {
+    if (valid && deleteId.value) {
+      try {
+        const success = await window.api.payment.recordInvoice(
+          deleteId.value,
+          invoiceForm.invoice_no,
+          invoiceForm.invoice_received_date
+        )
+        if (success) {
+          ElMessage.success('发票登记成功')
+          invoiceDialogVisible.value = false
+          deleteId.value = null
+          loadList()
+          if (searchForm.contractId.length === 1) {
+            loadContractPayments(searchForm.contractId[0])
+          }
+        } else {
+          ElMessage.error('操作失败')
+        }
+      } catch (e) {
+        ElMessage.error('操作失败')
+      }
+    }
+  })
 }
 
 async function confirmDelete() {
@@ -566,7 +625,7 @@ onMounted(() => {
             {{ row.remark || '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button
               v-if="row.status !== 'paid'"
@@ -576,6 +635,15 @@ onMounted(() => {
               @click="handleMarkPaid(row)"
             >
               标记付款
+            </el-button>
+            <el-button
+              v-if="row.status === 'paid' && row.invoice_received === 0"
+              type="warning"
+              link
+              size="small"
+              @click="handleRecordInvoice(row)"
+            >
+              补录发票
             </el-button>
             <el-button
               type="primary"
@@ -719,9 +787,6 @@ onMounted(() => {
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item label="发票号" prop="invoice_no">
-          <el-input v-model="paidForm.invoice_no" placeholder="请输入发票号" />
-        </el-form-item>
         <el-form-item label="是否收到发票">
           <el-switch
             v-model="paidForm.invoice_received"
@@ -731,10 +796,58 @@ onMounted(() => {
             inactive-text="未收到"
           />
         </el-form-item>
+        <el-form-item
+          v-if="paidForm.invoice_received === 1"
+          label="发票号"
+          prop="invoice_no"
+        >
+          <el-input v-model="paidForm.invoice_no" placeholder="请输入发票号" />
+        </el-form-item>
+        <el-alert
+          v-if="paidForm.invoice_received === 0"
+          type="info"
+          :closable="false"
+          show-icon
+          title="发票可后补"
+          description="可以先完成付款登记，后续收到发票后点击补录发票按钮登记发票信息。"
+          style="margin-top: 8px"
+        />
       </el-form>
       <template #footer>
         <el-button @click="paidDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleMarkPaidSubmit">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="invoiceDialogVisible"
+      title="补录发票信息"
+      width="480px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-form
+        ref="invoiceFormRef"
+        :model="invoiceForm"
+        :rules="invoiceFormRules"
+        label-width="120px"
+      >
+        <el-form-item label="发票号" prop="invoice_no">
+          <el-input v-model="invoiceForm.invoice_no" placeholder="请输入发票号" />
+        </el-form-item>
+        <el-form-item label="发票收到日期" prop="invoice_received_date">
+          <el-date-picker
+            v-model="invoiceForm.invoice_received_date"
+            type="date"
+            placeholder="选择发票收到日期"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="invoiceDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleRecordInvoiceSubmit">确定</el-button>
       </template>
     </el-dialog>
 
