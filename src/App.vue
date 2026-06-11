@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useContractStore } from '@/stores/contract'
@@ -38,6 +38,12 @@ const previewCount = computed(() => previewData.value.length)
 const previewTotalAmount = computed(() => {
   return previewData.value.reduce((sum, item) => sum + (item.amount || 0), 0)
 })
+const previewTotalPaid = computed(() => {
+  return previewData.value.reduce((sum, item) => sum + (item.paid_amount || 0), 0)
+})
+const previewTotalPending = computed(() => {
+  return previewData.value.reduce((sum, item) => sum + (item.pending_amount || 0), 0)
+})
 
 onMounted(() => {
   activeMenu.value = route.path
@@ -51,17 +57,17 @@ onMounted(() => {
 
 async function loadFilterOptions() {
   try {
-    const contracts = await window.api.contract.list(1, 9999)
+    const contracts = await window.api.contract.list({ page: 1, pageSize: 9999 })
     const managers = new Set<string>()
     contracts.list.forEach((c: any) => {
       if (c.manager) managers.add(c.manager)
     })
     allManagers.value = Array.from(managers).sort()
     
-    const assets = await window.api.asset.list(1, 9999)
+    const assets = await window.api.asset.list({ page: 1, pageSize: 9999 })
     const categories = new Set<string>()
     assets.list.forEach((a: any) => {
-      if (a.category) categories.add(a.category)
+      if (a.asset_category) categories.add(a.asset_category)
     })
     allCategories.value = Array.from(categories).sort()
   } catch (e) {
@@ -153,7 +159,7 @@ async function confirmExport() {
     )
     
     if (result?.success) {
-      ElMessage.success(`导出成功，共 ${result.count} 条记录')
+      ElMessage.success(`导出成功，共 ${result.count} 条记录`)
       previewDialogVisible.value = false
     }
   } catch (e) {
@@ -330,14 +336,15 @@ function getStatusLabel(status: string) {
       <el-form :inline="true" :model="previewForm" label-width="80px">
         <el-form-item label="月份">
           <el-date-picker
-            v-model="previewForm"
             type="month"
             value-format="YYYY-MM"
             :model-value="`${previewForm.year}-${String(previewForm.month).padStart(2, '0')}`"
             @update:model-value="(val: string) => {
-              const [y, m] = val.split('-');
-              previewForm.year = parseInt(y);
-              previewForm.month = parseInt(m);
+              if (val) {
+                const [y, m] = val.split('-');
+                previewForm.year = parseInt(y);
+                previewForm.month = parseInt(m);
+              }
             }"
             placeholder="选择月份"
             style="width: 180px"
@@ -398,17 +405,23 @@ function getStatusLabel(status: string) {
     </div>
 
     <div v-if="previewData.length > 0" class="preview-summary">
-      <el-row :gutter="16">
-        <el-col :span="12">
-          <div class="summary-card">
+      <el-row :gutter="12">
+        <el-col :span="8">
+          <div class="summary-card card-count">
             <div class="summary-label">记录条数</div>
             <div class="summary-value">{{ previewCount }} 条</div>
           </div>
         </el-col>
-        <el-col :span="12">
-          <div class="summary-card">
+        <el-col :span="8">
+          <div class="summary-card card-amount">
             <div class="summary-label">合同金额合计</div>
             <div class="summary-value amount-format">¥{{ (previewTotalAmount / 10000).toFixed(2) }}万</div>
+          </div>
+        </el-col>
+        <el-col :span="8">
+          <div class="summary-card card-paid">
+            <div class="summary-label">已付 / 待付</div>
+            <div class="summary-value amount-format">¥{{ (previewTotalPaid / 10000).toFixed(2) }}万 / ¥{{ (previewTotalPending / 10000).toFixed(2) }}万</div>
           </div>
         </el-col>
       </el-row>
@@ -421,23 +434,33 @@ function getStatusLabel(status: string) {
         max-height="400"
         size="small"
       >
-        <el-table-column prop="contract_no" label="合同编号" min-width="140" />
-        <el-table-column prop="contract_name" label="合同名称" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="counterparty" label="供应商" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="manager" label="负责人" width="100" />
-        <el-table-column prop="amount" label="合同金额" width="120">
+        <el-table-column prop="contract_no" label="合同编号" min-width="130" />
+        <el-table-column prop="contract_name" label="合同名称" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="supplier" label="供应商" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="amount" label="合同金额(元)" width="130">
           <template #default="{ row }">
             ¥{{ Number(row.amount).toLocaleString() }}
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="100">
+        <el-table-column prop="status" label="状态" width="90">
           <template #default="{ row }">
             <el-tag :type="row.status === 'active' ? 'success' : row.status === 'pending' ? 'warning' : 'info'" size="small">
-              {{ getStatusLabel(row.status) }}
+              {{ row.status_label || getStatusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="asset_count" label="关联资产" width="100" align="center" />
+        <el-table-column prop="manager" label="负责人" width="80" />
+        <el-table-column prop="paid_amount" label="已付(元)" width="110">
+          <template #default="{ row }">
+            ¥{{ Number(row.paid_amount || 0).toLocaleString() }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="pending_amount" label="待付(元)" width="110">
+          <template #default="{ row }">
+            ¥{{ Number(row.pending_amount || 0).toLocaleString() }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="asset_count" label="资产数" width="70" align="center" />
       </el-table>
 
       <div v-if="previewData.length === 0 && !previewLoading" class="preview-empty">
@@ -556,14 +579,21 @@ function getStatusLabel(status: string) {
 }
 
 .summary-card {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 20px;
   border-radius: 8px;
   color: #fff;
 }
 
-.summary-card:last-child {
+.summary-card.card-count {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.summary-card.card-amount {
   background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.summary-card.card-paid {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
 }
 
 .summary-label {

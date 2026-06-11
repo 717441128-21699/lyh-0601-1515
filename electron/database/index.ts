@@ -665,6 +665,55 @@ class ReminderService extends BaseService<Reminder> {
     super('reminders')
   }
 
+  list(params: any = {}) {
+    const { page = 1, pageSize = 20, ...filters } = params
+    const whereClauses: string[] = []
+    const values: any[] = []
+
+    if (filters.status) {
+      if (Array.isArray(filters.status)) {
+        const placeholders = filters.status.map(() => '?').join(',')
+        whereClauses.push(`r.status IN (${placeholders})`)
+        values.push(...filters.status)
+      } else {
+        whereClauses.push(`r.status = ?`)
+        values.push(filters.status)
+      }
+    }
+    if (filters.reminder_type) {
+      whereClauses.push(`r.reminder_type = ?`)
+      values.push(filters.reminder_type)
+    }
+    if (filters.priority) {
+      whereClauses.push(`r.priority = ?`)
+      values.push(filters.priority)
+    }
+    if (filters.contract_id) {
+      whereClauses.push(`r.contract_id = ?`)
+      values.push(filters.contract_id)
+    }
+
+    const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : ''
+    const countSql = `SELECT COUNT(*) as total FROM reminders r ${whereSql}`
+    const dataSql = `
+      SELECT r.*, c.contract_no, c.contract_name
+      FROM reminders r
+      LEFT JOIN contracts c ON r.contract_id = c.id
+      ${whereSql}
+      ORDER BY
+        CASE r.priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+        r.due_date ASC
+      LIMIT ? OFFSET ?
+    `
+
+    const countResult = getDb().exec(countSql, values)
+    const total = countResult[0]?.values[0]?.[0] as number || 0
+    const dataResult = getDb().exec(dataSql, [...values, pageSize, (page - 1) * pageSize])
+    const list = dataResult.length > 0 ? rowsToObjects(dataResult[0]) : []
+
+    return { list, total, page, pageSize }
+  }
+
   getPending() {
     const sql = `
       SELECT r.*, c.contract_no, c.contract_name 
@@ -837,7 +886,7 @@ class ExportService {
     const data = result.length > 0 ? rowsToObjects(result[0]) : []
 
     const typeMap: Record<string, string> = { purchase: '采购', lease: '租赁', maintenance: '维保' }
-    const statusMap: Record<string, string> = { active: '执行中', pending: '待执行', completed: '已完成', terminated: '已终止' }
+    const statusMap: Record<string, string> = { active: '执行中', pending: '待执行', completed: '已完成', terminated: '已终止', expired: '已过期' }
 
     const previewData = data.map((row: any) => ({
       contract_no: row.contract_no,
@@ -847,8 +896,9 @@ class ExportService {
       asset_category: row.asset_category,
       start_date: row.start_date,
       end_date: row.end_date,
-      total_amount: row.total_amount,
-      status: statusMap[row.status] || row.status,
+      amount: row.total_amount,
+      status: row.status,
+      status_label: statusMap[row.status] || row.status,
       manager: row.manager,
       department: row.department,
       asset_count: row.asset_count || 0,
@@ -856,12 +906,13 @@ class ExportService {
       pending_amount: row.pending_amount || 0
     }))
 
-    const totalAmount = previewData.reduce((sum: number, row: any) => sum + row.total_amount, 0)
+    const totalAmount = previewData.reduce((sum: number, row: any) => sum + row.amount, 0)
     const totalPaid = previewData.reduce((sum: number, row: any) => sum + row.paid_amount, 0)
     const totalPending = previewData.reduce((sum: number, row: any) => sum + row.pending_amount, 0)
 
     return {
-      list: previewData,
+      success: true,
+      data: previewData,
       count: previewData.length,
       totalAmount,
       totalPaid,
@@ -872,7 +923,7 @@ class ExportService {
   exportMonthlyLedger(year: number, month: number, filePath: string, filters?: { status?: string[]; manager?: string; assetCategory?: string }) {
     const preview = this.previewMonthlyLedger(year, month, filters)
 
-    const exportData = preview.list.map((row: any) => ({
+    const exportData = preview.data.map((row: any) => ({
       '合同编号': row.contract_no,
       '合同名称': row.contract_name,
       '合同类型': row.contract_type,
@@ -880,8 +931,8 @@ class ExportService {
       '资产类别': row.asset_category,
       '开始日期': row.start_date,
       '结束日期': row.end_date,
-      '合同金额(元)': row.total_amount,
-      '合同状态': row.status,
+      '合同金额(元)': row.amount,
+      '合同状态': row.status_label,
       '负责人': row.manager,
       '所属部门': row.department,
       '关联资产数': row.asset_count,

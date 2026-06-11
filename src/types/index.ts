@@ -225,6 +225,7 @@ declare global {
       export: {
         monthlyLedger: (year: number, month: number, filters?: { status?: string[]; manager?: string; assetCategory?: string }) => Promise<any>
         expiringList: () => Promise<any>
+        previewMonthlyLedger: (year: number, month: number, filters?: { status?: string[]; manager?: string; assetCategory?: string }) => Promise<any>
       }
     }
   }
